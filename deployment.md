@@ -2,7 +2,7 @@
 
 ## Run locally
 1. Install Python 3.11+.
-2. `git clone <GitHub URL from the TDD> && cd rfq-quote`
+2. `git clone https://github.com/numapatait6-ai/rfq-quote.git && cd rfq-quote`
 3. `python -m venv .venv && source .venv/bin/activate` (Windows: `.venv\Scripts\activate`)
 4. `pip install -r requirements.txt`
 5. Optional: `export ANTHROPIC_API_KEY=...` to turn on AI extraction. Without it the app uses the built-in rule-based parser.
