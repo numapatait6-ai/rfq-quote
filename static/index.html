@@ -1,0 +1,88 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quote Desk</title><style>
+:root{--bg:#fff;--ink:#1c1f23;--mute:#6b7280;--line:#e5e7eb;--acc:#1f4e79;--soft:#f6f7f9;--warn:#b45309;--bad:#b91c1c;--ok:#15803d}
+*{box-sizing:border-box}body{margin:0;font:14px/1.5 Inter,system-ui,sans-serif;color:var(--ink);background:var(--bg)}
+header{display:flex;gap:24px;align-items:center;padding:14px 32px;border-bottom:1px solid var(--line)}header b{font-size:16px}
+header a{color:var(--mute);text-decoration:none;cursor:pointer}header a.on{color:var(--ink);font-weight:600}header .sp{flex:1}
+main{max-width:1080px;margin:0 auto;padding:32px}h1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin:28px 0 10px}.mute{color:var(--mute)}
+table{width:100%;border-collapse:collapse}th{font-weight:500;color:var(--mute);text-align:left;font-size:12px}th,td{padding:8px 10px;border-bottom:1px solid var(--line)}
+.n{text-align:right;font-variant-numeric:tabular-nums}tr.c{cursor:pointer}tr.c:hover{background:var(--soft)}
+input,select,textarea,button{font:inherit}input,select,textarea{border:1px solid var(--line);border-radius:6px;padding:7px 9px;width:100%;background:#fff}
+button{border:1px solid var(--acc);background:var(--acc);color:#fff;border-radius:6px;padding:7px 14px;cursor:pointer}button.g{background:#fff;color:var(--acc)}button:disabled{opacity:.4;cursor:default}
+.row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.row>div{flex:1;min-width:140px}label{font-size:12px;color:var(--mute);display:block;margin-bottom:3px}
+.tag{font-size:12px;padding:2px 8px;border-radius:10px;background:var(--soft);color:var(--mute)}.tag.estimating{background:#eef2ff;color:#3730a3}.tag.pending_approval{background:#fef3c7;color:var(--warn)}.tag.approved,.tag.won{background:#dcfce7;color:var(--ok)}.tag.sent{background:#e0f2fe;color:#075985}.tag.lost{background:#fee2e2;color:var(--bad)}
+.src{font-size:11px;color:var(--mute);margin-top:2px}.card{border:1px solid var(--line);border-radius:8px;padding:18px;margin:12px 0}.sug{background:var(--soft);border-radius:6px;padding:10px 12px;margin:10px 0}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:6px;display:none}#toast.bad{background:var(--bad)}
+.empty{padding:40px;text-align:center;color:var(--mute)}.tot td{font-weight:600}.login{max-width:340px;margin:12vh auto}.login input{margin-bottom:12px}
+@media(max-width:720px){main{padding:16px}header{padding:12px 16px;gap:14px;flex-wrap:wrap}table{display:block;overflow-x:auto}}
+</style></head><body><div id="app"></div><div id="toast"></div><script>
+const $=s=>document.querySelector(s),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const inr=n=>Number(n).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2}),lakh=n=>"₹"+(n/1e5).toFixed(1)+" lakh";
+let S=JSON.parse(localStorage.getItem("s")||"null");
+function toast(m,bad){const t=$("#toast");t.textContent=m;t.className=bad?"bad":"";t.style.display="block";setTimeout(()=>t.style.display="none",3500)}
+async function api(p,o={},raw){const r=await fetch("/api"+p,{...o,headers:{"Content-Type":"application/json",Authorization:"Bearer "+(S?.token||"")},body:o.body&&JSON.stringify(o.body)});
+ if(r.status===401&&S){S=null;localStorage.removeItem("s");go();throw new Error("Session ended")}
+ if(!r.ok){let d=await r.json().catch(()=>({}));throw new Error(typeof d.detail==="string"?d.detail:"Please check the values you entered")}return raw?r:r.json()}
+const act=async(fn,ok)=>{try{await fn();ok&&toast(ok);go()}catch(e){toast(e.message,1)}};
+const nav=a=>`<header><b>Quote Desk</b><a href="#/" class="${a=="r"?"on":""}">RFQs</a><a href="#/search" class="${a=="s"?"on":""}">Past quotes</a><a href="#/rates" class="${a=="m"?"on":""}">Rate masters</a><span class="sp"></span><span class="mute">${esc(S.name)} · ${S.role.replace("_"," ")}</span><a onclick="S=null;localStorage.removeItem('s');go()">Sign out</a></header>`;
+const page=(a,h)=>$("#app").innerHTML=nav(a)+"<main>"+h+"</main>";
+const loading=a=>page(a,'<p class="mute">Loading…</p>');
+async function go(){const h=location.hash.slice(1)||"/";
+ if(!S)return login();loading("r");
+ try{if(h=="/")await reg();else if(h=="/rates")await rates();else if(h=="/search")await search();else if(h.startsWith("/rfq/"))await rfq(h.split("/")[2],h.split("/")[3]);}
+ catch(e){page("r",`<div class="empty">Something went wrong: ${esc(e.message)}<br><br><button onclick="go()">Try again</button></div>`)}}
+addEventListener("hashchange",go);
+function login(){$("#app").innerHTML=`<div class="login"><h1>Quote Desk</h1><p class="mute">Sign in to continue</p><label>Email</label><input id="e" value=""><label>Password</label><input id="p" type="password"><button style="width:100%" onclick="doLogin()">Sign in</button><p class="mute" style="margin-top:20px">Demo: estimator@demo.test / Estimate#2026<br>saleshead@demo.test / Approve#2026</p></div>`}
+async function doLogin(){try{S=await api("/login",{method:"POST",body:{email:$("#e").value,password:$("#p").value}});localStorage.setItem("s",JSON.stringify(S));go()}catch(e){toast(e.message,1)}}
+async function reg(){const f=location.hash.includes("f=")?location.hash.split("f=")[1]:"",L=await api("/rfqs"+(f?"?status="+f:""));
+ const opts=["","estimating","pending_approval","approved","sent","won","lost"].map(s=>`<option value="${s}" ${s==f?"selected":""}>${s?s.replace("_"," "):"All statuses"}</option>`).join("");
+ const today=new Date().toISOString().slice(0,10);
+ page("r",`<h1>RFQ register</h1><p class="mute">Every enquiry, its owner and where it stands.</p>
+ <div class="row" style="margin:20px 0"><div style="max-width:200px"><label>Status</label><select onchange="location.hash='#/'+(this.value?'?f='+this.value:'')">${opts}</select></div><div class="sp"></div>
+ <div><label>New RFQ · customer</label><input id="nc"></div><div style="max-width:160px"><label>Due date</label><input id="nd" type="date"></div><div style="flex:0"><button onclick="newRfq()">Create</button></div></div>
+ ${L.length?`<table><tr><th>RFQ</th><th>Customer</th><th>Due</th><th>Owner</th><th class="n">Parts</th><th class="n">Annual value</th><th>Status</th></tr>${L.map(r=>`<tr class="c" onclick="location.hash='#/rfq/${r.id}'"><td>${esc(r.rfq_no)}</td><td>${esc(r.customer)}</td><td ${r.due_date<today&&["estimating","pending_approval"].includes(r.status)?'style="color:var(--bad)"':""}>${r.due_date}</td><td>${esc(r.owner)}</td><td class="n">${r.parts}</td><td class="n">${r.annual_value?lakh(r.annual_value):"–"}</td><td><span class="tag ${r.status}">${r.status.replace("_"," ")}</span></td></tr>`).join("")}</table>`:'<div class="empty">No RFQs match this filter.</div>'}`)}
+const newRfq=()=>act(async()=>{const r=await api("/rfqs",{method:"POST",body:{customer:$("#nc").value,due_date:$("#nd").value}});location.hash="#/rfq/"+r.id});
+let RT=[];
+async function rfq(id,pid){const r=await api("/rfqs/"+id);RT=await api("/rates");const ed=r.status=="estimating",head=S.role=="sales_head";
+ const all=r.parts.length&&r.parts.every(p=>p.accepted);
+ let btn="";if(ed)btn=`<button ${all?"":"disabled"} title="${all?"":"Accept every part first"}" onclick="act(async()=>{const x=await api('/rfqs/${id}/submit',{method:'POST'});toast(x.status=='approved'?'Approved automatically (below '+(x.limit/1e5)+' lakh)':'Sent to sales head for approval')})">Submit for approval</button>`;
+ if(r.status=="pending_approval"&&head)btn=`<button onclick="act(()=>api('/rfqs/${id}/approve',{method:'POST'}),'Approved')">Approve</button> <button class="g" onclick="ret(${id})">Return</button>`;
+ if(r.status=="pending_approval"&&!head)btn='<span class="mute">Waiting for sales head</span>';
+ if(r.status=="approved")btn=`<button onclick="act(()=>api('/rfqs/${id}/send',{method:'POST'}),'Marked as sent (email is mocked)')">Mark as sent</button> `;
+ if(r.status=="sent")btn=`<button onclick="won(${id})">Won</button> <button class="g" onclick="lost(${id})">Lost</button>`;
+ const pdf=r.has_quote&&!["estimating","pending_approval"].includes(r.status)?`<button class="g" onclick="openPdf(${id})">PDF quote</button>`:"";
+ page("r",`<a href="#/" class="mute" style="cursor:pointer">← All RFQs</a><div class="row" style="margin-top:8px"><div><h1>${esc(r.rfq_no)} · ${esc(r.customer)}</h1><span class="tag ${r.status}">${r.status.replace("_"," ")}</span> <span class="mute">Due ${r.due_date} · Owner ${esc(r.owner)}${r.annual_value?" · Annual value "+lakh(r.annual_value)+" ex-GST":""}${r.approved_by?" · Approved by "+esc(r.approved_by):""}${r.lost_reason?" · "+esc(r.lost_reason):""}</span></div><div style="flex:0;white-space:nowrap">${pdf} ${btn}</div></div>
+ ${ed?`<h2>Add parts from the RFQ email or part list</h2><textarea id="tx" rows="4" placeholder="Paste email text or part-list rows.&#10;Format: Part name | Material | Gross wt kg | Annual volume"></textarea><div style="margin-top:8px"><button class="g" onclick="intake(${id})">Extract parts</button> <span class="mute">Extracted values are drafts. You confirm each part.</span></div>`:""}
+ <h2>Parts</h2>${r.parts.length?`<table><tr><th>Part</th><th>Material</th><th class="n">Gross kg</th><th class="n">Annual vol</th><th class="n">Routing steps</th><th></th></tr>${r.parts.map(p=>`<tr class="c" onclick="location.hash='#/rfq/${id}/${p.id}'"><td>${esc(p.name)}</td><td>${esc(p.material)}</td><td class="n">${p.gross_wt}</td><td class="n">${p.annual_volume.toLocaleString("en-IN")}</td><td class="n">${p.routing.length}</td><td>${p.accepted?'<span class="tag approved">accepted</span>':'<span class="tag pending_approval">needs review</span>'}</td></tr>`).join("")}</table>`:'<div class="empty">No parts yet. Paste an RFQ above.</div>'}<div id="cost"></div>`);
+ if(pid)await costing(r,r.parts.find(p=>p.id==pid),ed)}
+const intake=id=>act(()=>api(`/rfqs/${id}/intake`,{method:"POST",body:{text:$("#tx").value}}),"Parts extracted. Review each one.");
+const ret=id=>{const x=prompt("Reason for returning to estimator?");x&&act(()=>api(`/rfqs/${id}/return`,{method:"POST",body:{reason:x}}),"Returned")};
+const won=id=>act(()=>api(`/rfqs/${id}/outcome`,{method:"POST",body:{outcome:"won"}}),"Marked won");
+const lost=id=>{const x=prompt("Reason for loss?");x&&act(()=>api(`/rfqs/${id}/outcome`,{method:"POST",body:{outcome:"lost",reason:x}}),"Marked lost")};
+async function openPdf(id){try{const r=await api(`/rfqs/${id}/pdf`,{},1);window.open(URL.createObjectURL(await r.blob()))}catch(e){toast(e.message,1)}}
+let ROUTE=[];
+async function costing(r,p,ed){if(!p)return;ROUTE=p.routing.map(o=>({...o}));
+ const mach=RT.filter(x=>x.kind=="machine").map(x=>x.key).filter((v,i,a)=>a.indexOf(v)==i),sug=ed?await api(`/parts/${p.id}/suggest`):null;
+ const sr=k=>`<div class="src">Source: ${esc(p.sources[k]||"Entered by estimator")}</div>`;
+ $("#cost").innerHTML=`<div class="card"><h2 style="margin-top:0">Costing · ${esc(p.name)}</h2>
+ <div class="row"><div style="flex:2"><label>Part</label><input id="pn" value="${esc(p.name)}" ${ed?"":"disabled"}>${sr("name")}</div><div><label>Material</label><input id="pm" value="${esc(p.material)}" ${ed?"":"disabled"}>${sr("material")}</div><div><label>Gross wt (kg)</label><input id="pw" type="number" step="any" value="${p.gross_wt}" ${ed?"":"disabled"}>${sr("gross_wt")}</div><div><label>Annual volume</label><input id="pv" type="number" value="${p.annual_volume}" ${ed?"":"disabled"}>${sr("annual_volume")}</div></div>
+ <h2>Routing</h2>${sug&&!ROUTE.length?`<div class="sug">Suggested from past part: <b>${esc(sug.from)}</b><br>${sug.routing.map(o=>esc(o.machine)+" "+o.cycle_min+" min").join(" → ")} <button class="g" style="margin-left:8px" onclick="ROUTE=${esc(JSON.stringify(sug.routing))}.map(x=>x);drawRoute()">Use this routing</button></div>`:""}
+ <div id="route"></div>${ed?'<button class="g" onclick="ROUTE.push({machine:\''+mach[0]+'\',cycle_min:1});drawRoute()">+ Add step</button>':""}
+ <div id="res"></div>${ed?`<div style="margin-top:16px"><button class="g" onclick="savePart(${p.id},false)">Save &amp; calculate</button> <button onclick="savePart(${p.id},true)">Save &amp; accept</button></div>`:""}</div>`;
+ window.MACH=mach;window.ED=ed;drawRoute();if(ROUTE.length)calc(p.id)}
+function drawRoute(){$("#route").innerHTML=ROUTE.length?`<table><tr><th>Machine</th><th class="n">Cycle time (min)</th><th></th></tr>${ROUTE.map((o,i)=>`<tr><td><select ${ED?"":"disabled"} onchange="ROUTE[${i}].machine=this.value">${MACH.map(m=>`<option ${m==o.machine?"selected":""}>${esc(m)}</option>`).join("")}</select></td><td><input class="n" type="number" step="any" ${ED?"":"disabled"} value="${o.cycle_min}" onchange="ROUTE[${i}].cycle_min=+this.value"></td><td>${ED?`<a style="cursor:pointer;color:var(--bad)" onclick="ROUTE.splice(${i},1);drawRoute()">remove</a>`:""}</td></tr>`).join("")}</table>`:'<p class="mute">No routing yet.</p>'}
+async function savePart(id,acc){try{await api("/parts/"+id,{method:"PUT",body:{name:$("#pn").value,material:$("#pm").value,gross_wt:+$("#pw").value,annual_volume:+$("#pv").value,routing:ROUTE}});
+ if(acc){await api(`/parts/${id}/accept`,{method:"POST"});toast("Part accepted");go()}else{toast("Saved");await calc(id)}}catch(e){toast(e.message,1)}}
+async function calc(id){try{const c=await api(`/parts/${id}/cost`),rows=[["material","Material (incl. scrap)"],["conversion","Machining"],["setup","Setup per piece"],["overhead","Overhead"],["packing","Packing"],["freight","Freight"],["cost","Cost"],["margin","Margin"],["price","Price ex-GST"],["gst","GST"],["price_incl_gst","Price incl. GST"]];
+ $("#res").innerHTML=`<h2>Price per piece (₹) at three volumes</h2><table><tr><th></th>${c.volumes.map(v=>`<th class="n">${v.volume.toLocaleString("en-IN")} / yr</th>`).join("")}</tr>${rows.map(([k,l])=>`<tr class="${["cost","price"].includes(k)?"tot":""}"><td>${l}</td>${c.volumes.map(v=>`<td class="n">${inr(v[k])}</td>`).join("")}</tr>`).join("")}</table><p class="mute">Annual value ${lakh(c.annual_value)} ex-GST. Rates as of today: ${Object.entries(c.rates_used).filter(([k])=>k.startsWith("material")).map(([k,v])=>k.split(":")[1]+" ₹"+v.value+"/kg from "+v.effective_from).join(", ")}</p>`}
+ catch(e){$("#res").innerHTML=`<p style="color:var(--bad)">${esc(e.message)}. Check the material name against the rate masters.</p>`}}
+async function rates(){const R=await api("/rates"),head=S.role=="sales_head",g={};R.forEach(r=>(g[r.kind+": "+r.key]??=[]).push(r));
+ page("m",`<h1>Rate masters</h1><p class="mute">Rates never change in place. A change is a new row with an effective date, and each quote keeps the rates it was priced with.</p>
+ ${head?`<div class="row" style="margin:20px 0"><div><label>Kind</label><input id="rk" placeholder="material"></div><div><label>Key</label><input id="ry" placeholder="EN8"></div><div><label>Value</label><input id="rv" type="number" step="any"></div><div><label>Effective from</label><input id="rd" type="date"></div><div style="flex:0"><button onclick="addRate()">Add</button></div></div>`:'<p class="mute">Only the sales head can change rates.</p>'}
+ <table><tr><th>Rate</th><th class="n">Value</th><th>Effective from</th><th>By</th></tr>${Object.entries(g).map(([k,v])=>v.map((r,i)=>`<tr><td>${i?"":esc(k)}</td><td class="n">${r.value}</td><td>${r.effective_from} ${i?'<span class="mute">(superseded)</span>':""}</td><td class="mute">${esc(r.created_by)}</td></tr>`).join("")).join("")}</table>`)}
+const addRate=()=>act(()=>api("/rates",{method:"POST",body:{kind:$("#rk").value,key:$("#ry").value,value:+$("#rv").value,effective_from:$("#rd").value}}),"Rate added");
+async function search(t=""){const L=await api("/search?term="+encodeURIComponent(t));
+ page("s",`<h1>Past quotes</h1><p class="mute">What we quoted for a similar part before.</p><div style="margin:20px 0;max-width:360px"><input id="st" placeholder="Part, material or customer" value="${esc(t)}" onkeydown="if(event.key=='Enter')search(this.value)"></div>
+ ${L.length?`<table><tr><th>Quote</th><th>Part</th><th>Material</th><th>Customer</th><th>Date</th><th class="n">Price ₹/pc</th></tr>${L.map(r=>`<tr><td>${esc(r.quote_no)}</td><td>${esc(r.name)}</td><td>${esc(r.material)}</td><td>${esc(r.customer)}</td><td>${r.quoted_on}</td><td class="n">${inr(r.price)}</td></tr>`).join("")}</table>`:'<div class="empty">No past quotes match.</div>'}`)}
+go();
+</script></body></html>
